@@ -1,23 +1,20 @@
-"""
-app.py
-------
-AI Research & Article Writer
-
-Streamlit frontend for the CrewAI research and article-writing system.
-"""
-
 import os
-from datetime import datetime
-
 import streamlit as st
 from dotenv import load_dotenv
 
 from agent_crew import AgentCrewManager
 
 
-# ---------------------------------------------------------
-# Page configuration
-# ---------------------------------------------------------
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
+load_dotenv()
+
+
+# ============================================================
+# PAGE CONFIGURATION
+# ============================================================
 
 st.set_page_config(
     page_title="AI Research & Article Writer",
@@ -27,50 +24,50 @@ st.set_page_config(
 )
 
 
-# ---------------------------------------------------------
-# Load environment variables
-# ---------------------------------------------------------
-
-load_dotenv()
-
-
-# ---------------------------------------------------------
-# Custom CSS
-# ---------------------------------------------------------
+# ============================================================
+# CUSTOM CSS
+# ============================================================
 
 st.markdown(
     """
     <style>
-        .main-header {
-            font-size: 2.7rem;
+        .main-title {
+            font-size: 3rem;
             font-weight: 700;
             margin-bottom: 0.2rem;
         }
 
-        .sub-header {
+        .subtitle {
             font-size: 1.15rem;
             color: #6b7280;
             margin-bottom: 2rem;
         }
 
-        .info-card {
+        .feature-card {
             padding: 1.2rem;
+            border: 1px solid #e5e7eb;
             border-radius: 12px;
-            border: 1px solid rgba(128, 128, 128, 0.25);
-            margin-bottom: 1rem;
+            background-color: #ffffff;
+            min-height: 150px;
         }
 
-        .topic-example {
-            padding: 0.7rem 1rem;
-            border-radius: 8px;
-            background-color: rgba(128, 128, 128, 0.08);
+        .feature-title {
+            font-size: 1.15rem;
+            font-weight: 600;
             margin-bottom: 0.5rem;
         }
 
-        div.stButton > button {
-            width: 100%;
+        .feature-text {
+            color: #6b7280;
+            line-height: 1.6;
+        }
+
+        .success-box {
+            padding: 0.8rem;
             border-radius: 8px;
-            font-weight: 600;
+            background-color: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            color: #065f46;
         }
     </style>
     """,
@@ -78,52 +75,103 @@ st.markdown(
 )
 
 
-# ---------------------------------------------------------
-# Session state
-# ---------------------------------------------------------
+# ============================================================
+# GET GROQ API KEY
+# ============================================================
 
-if "article" not in st.session_state:
-    st.session_state.article = ""
+def get_groq_api_key():
+    """
+    Priority:
+    1. Streamlit Cloud Secrets
+    2. Local .env file
+    3. Manual sidebar input
+    """
 
-if "last_topic" not in st.session_state:
-    st.session_state.last_topic = ""
+    # --------------------------------------------------------
+    # 1. Streamlit Secrets
+    # --------------------------------------------------------
+
+    try:
+        if "GROQ_API_KEY" in st.secrets:
+            secret_key = st.secrets["GROQ_API_KEY"]
+
+            if secret_key:
+                return str(secret_key).strip()
+    except Exception:
+        pass
+
+    # --------------------------------------------------------
+    # 2. Local .env
+    # --------------------------------------------------------
+
+    env_key = os.getenv("GROQ_API_KEY")
+
+    if env_key:
+        return env_key.strip()
+
+    # --------------------------------------------------------
+    # 3. No key found
+    # --------------------------------------------------------
+
+    return None
 
 
-# ---------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------
+api_key = get_groq_api_key()
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
 
 with st.sidebar:
 
     st.header("⚙️ Settings")
 
-    st.markdown(
-        """
-        Enter your Groq API key below if you are not using
-        a local `.env` file.
-        """
-    )
+    # --------------------------------------------------------
+    # API KEY
+    # --------------------------------------------------------
 
-    sidebar_api_key = st.text_input(
-        "Groq API Key",
-        type="password",
-        placeholder="gsk_...",
-        help="Your API key is used only for this application session.",
-    )
+    if api_key:
+
+        st.success("✓ Groq API key loaded")
+
+        st.caption(
+            "Your API key is being loaded from "
+            "Streamlit Secrets or the local environment."
+        )
+
+    else:
+
+        st.warning("Groq API key not found.")
+
+        manual_key = st.text_input(
+            "Groq API Key",
+            type="password",
+            placeholder="gsk_...",
+            help="Enter your Groq API key if you are not using Streamlit Secrets.",
+        )
+
+        if manual_key:
+            api_key = manual_key.strip()
 
     st.divider()
+
+    # --------------------------------------------------------
+    # ADVANCED OPTIONS
+    # --------------------------------------------------------
 
     st.subheader("Advanced Options")
 
     research_depth = st.selectbox(
         "Research Depth",
         options=[
-            "Basic",
+            "Quick",
+            "Standard",
             "Detailed",
-            "Deep",
+            "Deep Research",
         ],
-        index=1,
-        help="Controls how extensively the researcher should investigate the topic.",
+        index=2,
+        help="Controls how much research the AI should perform.",
     )
 
     article_length = st.selectbox(
@@ -132,40 +180,32 @@ with st.sidebar:
             "Short",
             "Medium",
             "Long",
+            "Very Long",
         ],
         index=1,
-        help="Controls the approximate size of the final article.",
+        help="Controls the approximate length of the generated article.",
     )
 
     st.divider()
 
     st.caption(
         "AI Research & Article Writer\n"
-        "Streamlit + CrewAI + Groq + DuckDuckGo"
+        "Powered by Streamlit, CrewAI, Groq and web search."
     )
 
 
-# ---------------------------------------------------------
-# API key resolution
-# ---------------------------------------------------------
-
-env_api_key = os.getenv("GROQ_API_KEY", "").strip()
-
-api_key = sidebar_api_key.strip() if sidebar_api_key.strip() else env_api_key
-
-
-# ---------------------------------------------------------
-# Main header
-# ---------------------------------------------------------
+# ============================================================
+# MAIN HEADER
+# ============================================================
 
 st.markdown(
-    '<div class="main-header">🔎 AI Research & Article Writer</div>',
+    '<div class="main-title">🔎 AI Research & Article Writer</div>',
     unsafe_allow_html=True,
 )
 
 st.markdown(
     """
-    <div class="sub-header">
+    <div class="subtitle">
     Research a topic using web search and generate a structured,
     professional Markdown article with AI.
     </div>
@@ -174,18 +214,21 @@ st.markdown(
 )
 
 
-# ---------------------------------------------------------
-# Information cards
-# ---------------------------------------------------------
+# ============================================================
+# FEATURE CARDS
+# ============================================================
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown(
         """
-        <div class="info-card">
-        <strong>🔎 Research</strong><br>
-        Searches the web for relevant facts and sources.
+        <div class="feature-card">
+            <div class="feature-title">🔎 Research</div>
+            <div class="feature-text">
+                Searches the web for relevant facts, information
+                and sources.
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -194,9 +237,12 @@ with col1:
 with col2:
     st.markdown(
         """
-        <div class="info-card">
-        <strong>🤖 AI Writing</strong><br>
-        Converts research into a structured article.
+        <div class="feature-card">
+            <div class="feature-title">🤖 AI Writing</div>
+            <div class="feature-text">
+                Converts research into a structured,
+                professional article.
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -205,197 +251,271 @@ with col2:
 with col3:
     st.markdown(
         """
-        <div class="info-card">
-        <strong>📥 Export</strong><br>
-        Download the finished article as Markdown.
+        <div class="feature-card">
+            <div class="feature-title">📥 Export</div>
+            <div class="feature-text">
+                Download the finished article as a Markdown file.
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-# ---------------------------------------------------------
-# Topic input
-# ---------------------------------------------------------
+st.write("")
+st.write("")
 
-st.subheader("Research Topic")
 
-topic = st.text_input(
-    "What would you like to research?",
-    placeholder="Example: Generative AI in Business",
-    help="Enter a clear topic that you want the AI to research and write about.",
+# ============================================================
+# RESEARCH TOPIC
+# ============================================================
+
+st.header("Research Topic")
+
+st.write("What would you like to research?")
+
+topic = st.text_area(
+    "Enter your research topic",
+    placeholder=(
+        "Example: The impact of artificial intelligence "
+        "on business education"
+    ),
+    height=120,
+    label_visibility="collapsed",
 )
 
 
-# ---------------------------------------------------------
-# Suggestions
-# ---------------------------------------------------------
+# ============================================================
+# TOPIC SUGGESTIONS
+# ============================================================
 
-st.markdown("**Sample topics:**")
+st.caption("💡 Topic suggestions")
 
-suggestions = [
-    "Generative AI in Business",
-    "AI Agents in Education",
-    "Future of Data Analytics",
-    "Cybersecurity for Small Businesses",
-    "AI in Healthcare",
-]
+suggestion_col1, suggestion_col2, suggestion_col3 = st.columns(3)
 
-suggestion_columns = st.columns(len(suggestions))
+with suggestion_col1:
 
-for column, suggestion in zip(suggestion_columns, suggestions):
-    with column:
-        if st.button(
-            suggestion,
-            key=f"suggestion_{suggestion}",
-        ):
-            st.session_state.selected_topic = suggestion
-            st.rerun()
+    if st.button(
+        "AI in Business",
+        use_container_width=True,
+    ):
+        st.session_state["topic"] = (
+            "The impact of artificial intelligence on modern business"
+        )
 
+with suggestion_col2:
 
-if "selected_topic" in st.session_state:
-    if st.session_state.selected_topic:
-        topic = st.session_state.selected_topic
+    if st.button(
+        "Future of Remote Work",
+        use_container_width=True,
+    ):
+        st.session_state["topic"] = (
+            "The future of remote work and its impact on businesses"
+        )
 
-        st.info(
-            f"Selected topic: **{topic}**"
+with suggestion_col3:
+
+    if st.button(
+        "AI in Education",
+        use_container_width=True,
+    ):
+        st.session_state["topic"] = (
+            "The impact of artificial intelligence on education"
         )
 
 
-# ---------------------------------------------------------
-# Generate button
-# ---------------------------------------------------------
+# Use suggested topic if selected
+if "topic" in st.session_state and st.session_state["topic"]:
+
+    topic = st.session_state["topic"]
+
+    st.info(
+        f"Selected topic: **{topic}**"
+    )
+
 
 st.write("")
+
+
+# ============================================================
+# GENERATE BUTTON
+# ============================================================
 
 generate_button = st.button(
     "🚀 Generate Article",
     type="primary",
+    use_container_width=True,
 )
 
 
-# ---------------------------------------------------------
-# Article generation
-# ---------------------------------------------------------
+# ============================================================
+# ARTICLE GENERATION
+# ============================================================
 
 if generate_button:
 
-    # Validate topic
-    if not topic or not topic.strip():
-        st.warning(
-            "Please enter a research topic before generating an article."
-        )
-        st.stop()
-
+    # --------------------------------------------------------
     # Validate API key
+    # --------------------------------------------------------
+
     if not api_key:
+
         st.error(
-            "Groq API key is missing. Add it in the sidebar or configure "
-            "GROQ_API_KEY in your environment."
+            "Groq API key is missing. "
+            "Please add GROQ_API_KEY to Streamlit Secrets."
         )
+
         st.stop()
 
-    clean_topic = topic.strip()
+    # --------------------------------------------------------
+    # Validate topic
+    # --------------------------------------------------------
 
-    st.session_state.last_topic = clean_topic
+    if not topic or not topic.strip():
+
+        st.warning(
+            "Please enter a research topic first."
+        )
+
+        st.stop()
+
+    topic = topic.strip()
+
+    # --------------------------------------------------------
+    # Generate article
+    # --------------------------------------------------------
 
     try:
 
-        # Status container
-        status = st.status(
-            "Starting AI research workflow...",
+        with st.status(
+            "🔎 Researching your topic...",
             expanded=True,
-        )
+        ) as status:
 
-        with status:
+            st.write("Searching for relevant information...")
+            st.write("Analyzing the research...")
+            st.write("Preparing the article...")
 
-            st.write("🔐 Validating Groq API configuration...")
+            # ------------------------------------------------
+            # Create Crew Manager
+            # ------------------------------------------------
 
             manager = AgentCrewManager(
-                api_key=api_key,
-                model="openai/gpt-oss-120b",
-                temperature=0.2,
+                api_key=api_key
             )
 
-            st.write("🔎 Researcher agent is searching for relevant information...")
+            # ------------------------------------------------
+            # Generate article
+            # ------------------------------------------------
 
-            st.write(
-                f"📚 Research depth: **{research_depth}**"
+            if hasattr(manager, "generate_article"):
+
+                result = manager.generate_article(
+                    topic=topic,
+                    depth=research_depth,
+                    length=article_length,
+                )
+
+            elif hasattr(manager, "run"):
+
+                result = manager.run(
+                    topic=topic,
+                    depth=research_depth,
+                    length=article_length,
+                )
+
+            else:
+
+                raise AttributeError(
+                    "AgentCrewManager does not contain "
+                    "generate_article() or run()."
+                )
+
+            status.update(
+                label="✅ Article generated successfully!",
+                state="complete",
+                expanded=False,
             )
 
-            st.write(
-                f"📝 Article length: **{article_length}**"
+        # ----------------------------------------------------
+        # Convert result to text
+        # ----------------------------------------------------
+
+        if hasattr(result, "raw"):
+
+            article = result.raw
+
+        else:
+
+            article = str(result)
+
+        if not article.strip():
+
+            st.error(
+                "The AI returned an empty article."
             )
 
-            st.write("✍️ Writer agent is preparing the article...")
+            st.stop()
 
-            article = manager.generate_article(
-                topic=clean_topic,
-                depth=research_depth,
-                article_length=article_length,
-            )
+        # ----------------------------------------------------
+        # Save article in session state
+        # ----------------------------------------------------
 
-            st.session_state.article = article
+        st.session_state["generated_article"] = article
+        st.session_state["generated_topic"] = topic
 
-            st.write("✅ Article generation completed.")
-
-        status.update(
-            label="Article generated successfully!",
-            state="complete",
-            expanded=False,
-        )
-
-    except Exception as error:
+    except Exception as e:
 
         st.error(
-            "The article could not be generated."
+            "Something went wrong while generating the article."
         )
 
-        with st.expander("Technical error details"):
-            st.code(str(error))
-
-        st.stop()
+        st.exception(e)
 
 
-# ---------------------------------------------------------
-# Display final article
-# ---------------------------------------------------------
+# ============================================================
+# DISPLAY GENERATED ARTICLE
+# ============================================================
 
-if st.session_state.article:
+if "generated_article" in st.session_state:
 
     st.divider()
 
-    st.subheader("📄 Generated Article")
+    st.header("📄 Generated Article")
 
-    st.markdown(
-        st.session_state.article
-    )
+    article = st.session_state["generated_article"]
+
+    # --------------------------------------------------------
+    # Article preview
+    # --------------------------------------------------------
+
+    st.markdown(article)
 
     st.divider()
 
-    # Download filename
-    safe_topic = (
-        st.session_state.last_topic
-        .lower()
-        .replace(" ", "-")
-        .replace("/", "-")
-        .replace("\\", "-")
-    )
+    # --------------------------------------------------------
+    # Download
+    # --------------------------------------------------------
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    filename = (
-        f"{safe_topic[:50]}_article_{timestamp}.md"
-    )
+    download_filename = "AI_Research_Article.md"
 
     st.download_button(
         label="📥 Download Article as Markdown",
-        data=st.session_state.article,
-        file_name=filename,
+        data=article,
+        file_name=download_filename,
         mime="text/markdown",
+        use_container_width=True,
     )
 
-    st.caption(
-        "Tip: You can open the downloaded `.md` file in "
-        "VS Code, GitHub, Obsidian, Typora, or another Markdown editor."
-    )
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.write("")
+st.write("")
+
+st.caption(
+    "AI Research & Article Writer • Built with Streamlit, "
+    "CrewAI, Groq and DuckDuckGo"
+)

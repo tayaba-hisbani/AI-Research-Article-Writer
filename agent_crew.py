@@ -1,13 +1,15 @@
 """
 agent_crew.py
 -------------
-Backend logic for the AI Research & Article Writer application.
+Backend for the AI Research & Article Writer.
 
-The workflow is:
+Architecture:
 
 User Topic
     ↓
 Researcher Agent
+    ↓
+Custom DuckDuckGo CrewAI Tool
     ↓
 Research Findings
     ↓
@@ -19,14 +21,71 @@ Final Markdown Article
 import os
 from typing import Optional
 
-from crewai import Agent, Crew, Process, Task
-from crewai_tools import DuckDuckGoSearchTool
+from crewai import Agent, Crew, Process, Task, tool
 from langchain_groq import ChatGroq
+from duckduckgo_search import DDGS
 
+
+# ============================================================
+# DuckDuckGo Search Tool
+# ============================================================
+
+@tool("DuckDuckGo Web Search")
+def duckduckgo_search(query: str) -> str:
+    """
+    Search the web using DuckDuckGo.
+
+    Use this tool when you need current information, facts,
+    sources, official documentation, research papers, or
+    recent developments about a topic.
+    """
+
+    if not query or not query.strip():
+        return "Search query cannot be empty."
+
+    try:
+        results = []
+
+        with DDGS() as ddgs:
+            search_results = ddgs.text(
+                query=query.strip(),
+                max_results=8,
+                safesearch="moderate",
+            )
+
+            for item in search_results:
+                title = item.get("title", "No title")
+                url = item.get("href", "")
+                body = item.get("body", "")
+
+                results.append(
+                    f"TITLE: {title}\n"
+                    f"URL: {url}\n"
+                    f"SUMMARY: {body}\n"
+                )
+
+        if not results:
+            return (
+                "No search results were found. "
+                "Try a different or more specific search query."
+            )
+
+        return "\n---\n".join(results)
+
+    except Exception as exc:
+        return (
+            "DuckDuckGo search failed.\n"
+            f"Error: {str(exc)}"
+        )
+
+
+# ============================================================
+# Agent Crew Manager
+# ============================================================
 
 class AgentCrewManager:
     """
-    Manages the CrewAI research and article-writing workflow.
+    Manages the complete research and article-writing workflow.
     """
 
     def __init__(
@@ -36,31 +95,27 @@ class AgentCrewManager:
         temperature: float = 0.2,
     ):
         """
-        Initialize the AI model and search tool.
-
-        Parameters
-        ----------
-        api_key:
-            Groq API key. If not provided, GROQ_API_KEY is read
-            from environment variables.
-
-        model:
-            Groq model to use.
-
-        temperature:
-            Controls randomness of the generated content.
+        Initialize the CrewAI workflow.
         """
 
-        self.api_key = api_key or os.getenv("GROQ_API_KEY")
+        self.api_key = (
+            api_key
+            or os.getenv("GROQ_API_KEY")
+        )
 
         if not self.api_key:
             raise ValueError(
                 "GROQ_API_KEY is missing. "
-                "Add it to your .env file or provide it through the Streamlit sidebar."
+                "Add it to Streamlit Secrets, your .env file, "
+                "or enter it in the sidebar."
             )
 
         self.model_name = model
         self.temperature = temperature
+
+        # ----------------------------------------------------
+        # Groq LLM
+        # ----------------------------------------------------
 
         self.llm = ChatGroq(
             model=self.model_name,
@@ -68,77 +123,104 @@ class AgentCrewManager:
             temperature=self.temperature,
         )
 
-        self.search_tool = DuckDuckGoSearchTool()
+    # ========================================================
+    # Researcher Agent
+    # ========================================================
 
-    def create_researcher(self, depth: str = "Detailed") -> Agent:
+    def create_researcher(
+        self,
+        depth: str = "Detailed",
+    ) -> Agent:
         """
-        Create the research agent.
+        Create the Senior Technical Researcher agent.
         """
 
         depth_instructions = {
             "Basic": (
-                "Focus on the most important facts and provide a concise "
-                "research summary."
+                "Focus on the most important facts and "
+                "provide a concise research summary."
             ),
             "Detailed": (
-                "Conduct thorough research covering definitions, important "
-                "developments, practical examples, and reliable sources."
+                "Conduct thorough research covering definitions, "
+                "important developments, practical examples, "
+                "and reliable sources."
             ),
             "Deep": (
-                "Conduct extensive research. Cross-check important claims, "
-                "look for primary sources where possible, identify recent "
-                "developments, and distinguish established facts from claims "
-                "or opinions."
+                "Conduct extensive research. Cross-check important "
+                "claims, look for primary sources where possible, "
+                "identify recent developments, and distinguish "
+                "established facts from claims or opinions."
             ),
         }
 
-        instruction = depth_instructions.get(
+        research_instruction = depth_instructions.get(
             depth,
             depth_instructions["Detailed"],
         )
 
         return Agent(
             role="Senior Technical Researcher",
+
             goal=(
-                "Research the requested topic accurately and provide "
-                "well-organized factual material that another agent can "
-                "use to write a high-quality article."
+                "Research the requested topic accurately and "
+                "provide well-organized factual material for "
+                "a professional article writer."
             ),
+
             backstory=(
-                "You are an experienced technical researcher who specializes "
-                "in finding reliable information online. You prioritize "
-                "primary sources, official documentation, academic sources, "
-                "research papers, reputable organizations, and credible "
+                "You are an experienced technical researcher "
+                "specializing in online research. You prioritize "
+                "official documentation, primary sources, "
+                "academic research, government sources, "
+                "reputable organizations, and credible "
                 "industry publications."
             ),
-            tools=[self.search_tool],
+
+            tools=[
+                duckduckgo_search
+            ],
+
             llm=self.llm,
+
             verbose=False,
+
             allow_delegation=False,
         )
 
+    # ========================================================
+    # Writer Agent
+    # ========================================================
+
     def create_writer(self) -> Agent:
         """
-        Create the article-writing agent.
+        Create the Technical Article Writer agent.
         """
 
         return Agent(
             role="Technical Article Writer & Formatting Specialist",
+
             goal=(
-                "Transform the research findings into an accurate, useful, "
-                "well-structured Markdown article."
+                "Transform research findings into an accurate, "
+                "useful, professional and readable Markdown article."
             ),
+
             backstory=(
-                "You are a professional technical writer who converts "
-                "complex research into clear and readable articles. "
-                "You never intentionally invent facts, sources, statistics, "
-                "quotes, or URLs. You organize information logically and "
-                "clearly distinguish established facts from uncertainty."
+                "You are an experienced technical writer who "
+                "turns complex research into clear educational "
+                "content. You never intentionally invent facts, "
+                "statistics, citations, quotes or URLs."
             ),
+
             llm=self.llm,
+
             verbose=False,
+
             allow_delegation=False,
         )
+
+    # ========================================================
+    # Research Task
+    # ========================================================
 
     def create_research_task(
         self,
@@ -151,7 +233,7 @@ class AgentCrewManager:
 
         return Task(
             description=f"""
-Research the following topic thoroughly:
+Research the following topic:
 
 TOPIC:
 {topic}
@@ -159,46 +241,107 @@ TOPIC:
 RESEARCH DEPTH:
 {depth}
 
-Your job is to produce research findings for a professional article writer.
+{{
+RESEARCH INSTRUCTIONS
+}}
 
-Research requirements:
+{self._research_depth_instruction(depth)}
 
-1. Define the topic clearly.
+You must:
+
+1. Clearly define the topic.
+
 2. Identify the most important concepts.
-3. Find factual information and useful context.
-4. Look for recent developments when relevant.
-5. Find real-world examples and applications.
+
+3. Find factual information.
+
+4. Find recent developments when relevant.
+
+5. Find real-world applications.
+
 6. Search for primary sources whenever possible.
+
 7. Prefer:
    - Official websites
    - Government sources
-   - Academic/research sources
-   - Official technical documentation
+   - Academic sources
+   - Research papers
+   - Official documentation
    - Reputable organizations
    - Credible industry publications
-8. Identify useful statistics only when they can be supported.
-9. Include source names and URLs when available.
-10. Do not invent sources or URLs.
-11. Clearly distinguish facts from opinions or claims.
-12. Organize your findings so that another writer can easily use them.
 
-Return a structured research report rather than a finished article.
+8. Identify useful statistics only when supported.
+
+9. Record source names.
+
+10. Record source URLs whenever available.
+
+11. Do not invent sources.
+
+12. Do not invent URLs.
+
+13. Clearly identify uncertainty or conflicting information.
+
+14. Organize the findings so the writer can directly use them.
+
+The output should be a structured research report,
+NOT a finished article.
 """,
+
             expected_output="""
 A structured research report containing:
 
 - Topic definition
 - Key concepts
 - Important facts
-- Recent developments, if applicable
+- Recent developments
 - Real-world applications
-- Relevant statistics, if verified
-- Important examples
+- Examples
+- Statistics where verified
 - Primary/reliable sources
-- URLs where available
-- Notes about uncertainty or conflicting information
+- Source URLs
+- Notes about uncertainty
 """,
         )
+
+    # ========================================================
+    # Research Depth Helper
+    # ========================================================
+
+    @staticmethod
+    def _research_depth_instruction(
+        depth: str,
+    ) -> str:
+
+        instructions = {
+            "Basic": """
+Focus on the most important information.
+Avoid unnecessary details.
+""",
+
+            "Detailed": """
+Provide a thorough research report covering
+the major concepts, facts, applications,
+examples and sources.
+""",
+
+            "Deep": """
+Perform extensive research.
+Cross-check important claims,
+look for primary sources,
+look for recent developments,
+and identify disagreements or uncertainty.
+""",
+        }
+
+        return instructions.get(
+            depth,
+            instructions["Detailed"],
+        )
+
+    # ========================================================
+    # Writing Task
+    # ========================================================
 
     def create_writing_task(
         self,
@@ -208,23 +351,19 @@ A structured research report containing:
     ) -> Task:
         """
         Create the article-writing task.
-
-        The research task is supplied as context so the writer receives
-        the research output directly from the previous CrewAI task.
         """
 
         length_instructions = {
             "Short": (
-                "Write approximately 700–1,000 words while covering all "
-                "required sections."
+                "Write approximately 700–1,000 words."
             ),
+
             "Medium": (
-                "Write approximately 1,200–1,800 words with enough depth "
-                "for a professional educational article."
+                "Write approximately 1,200–1,800 words."
             ),
+
             "Long": (
-                "Write approximately 2,000–3,000 words with comprehensive "
-                "coverage while avoiding unnecessary repetition."
+                "Write approximately 2,000–3,000 words."
             ),
         }
 
@@ -243,60 +382,77 @@ TOPIC:
 ARTICLE LENGTH:
 {length_instruction}
 
-Use ONLY the research findings supplied by the researcher as your
-primary factual basis.
+Use the research findings from the previous
+Researcher Agent as the factual foundation.
 
-The final article MUST contain these sections:
+The final article MUST contain:
 
 # Title
 
 ## Introduction
 
+Explain what the topic is and why it matters.
+
 ## Core Concepts
 
-Explain the important concepts in clear language.
+Explain the major concepts clearly.
 
 ## Real-World Use Cases
 
-Provide practical applications and examples.
+Explain practical applications and examples.
 
 ## Key Takeaways
 
-Use a concise bullet list.
+Provide concise bullet points.
 
 ## Summary Table
 
-Create a Markdown table summarizing important concepts, facts,
-applications, advantages, limitations, or other useful information.
+Create a useful Markdown table.
 
 ## Conclusion
 
-Provide a concise final summary.
+Summarize the major findings.
 
 ## References
 
-List the useful sources identified during research.
+List the relevant sources and URLs supplied
+by the research.
 
-Formatting requirements:
+FORMATTING RULES:
 
 1. Return clean Markdown.
-2. Use headings and subheadings.
-3. Use bullet points where useful.
-4. Use Markdown tables where appropriate.
-5. Make the article readable for a general professional audience.
-6. Explain technical terminology when necessary.
-7. Avoid unnecessary repetition.
-8. Do not include a separate "research process" section.
-9. Do not mention CrewAI, agents, internal prompts, or this task.
-10. Do not invent citations, statistics, quotes, or URLs.
-11. If a source URL was not verified or supplied by research, do not
-    manufacture one.
-12. Keep factual claims aligned with the supplied research.
 
-The final output should be ready to copy into a Markdown file.
+2. Use headings and subheadings.
+
+3. Use bullet points where useful.
+
+4. Use Markdown tables.
+
+5. Keep the writing professional and readable.
+
+6. Explain technical terminology when necessary.
+
+7. Avoid unnecessary repetition.
+
+8. Do not mention CrewAI.
+
+9. Do not mention internal prompts.
+
+10. Do not invent citations.
+
+11. Do not invent URLs.
+
+12. Do not invent statistics.
+
+13. Do not invent quotes.
+
+14. Keep factual claims aligned with the research.
+
+The output must be ready to save as a Markdown file.
 """,
+
             expected_output="""
-A complete, polished Markdown article containing:
+A complete Markdown article containing:
 
 - Title
 - Introduction
@@ -307,8 +463,15 @@ A complete, polished Markdown article containing:
 - Conclusion
 - References
 """,
-            context=[research_task],
+
+            context=[
+                research_task
+            ],
         )
+
+    # ========================================================
+    # Main Execution
+    # ========================================================
 
     def generate_article(
         self,
@@ -317,19 +480,33 @@ A complete, polished Markdown article containing:
         article_length: str = "Medium",
     ) -> str:
         """
-        Run the complete research → writing workflow.
+        Run:
 
-        Returns
-        -------
-        str
-            Final Markdown article.
+        Researcher
+            ↓
+        Writer
+            ↓
+        Final Article
         """
 
         if not topic or not topic.strip():
-            raise ValueError("Please provide a research topic.")
+            raise ValueError(
+                "Please provide a research topic."
+            )
 
-        researcher = self.create_researcher(depth=depth)
+        # ----------------------------------------------------
+        # Create agents
+        # ----------------------------------------------------
+
+        researcher = self.create_researcher(
+            depth=depth
+        )
+
         writer = self.create_writer()
+
+        # ----------------------------------------------------
+        # Create tasks
+        # ----------------------------------------------------
 
         research_task = self.create_research_task(
             topic=topic.strip(),
@@ -342,22 +519,35 @@ A complete, polished Markdown article containing:
             article_length=article_length,
         )
 
+        # Assign agents
         research_task.agent = researcher
         writing_task.agent = writer
+
+        # ----------------------------------------------------
+        # Create Crew
+        # ----------------------------------------------------
 
         crew = Crew(
             agents=[
                 researcher,
                 writer,
             ],
+
             tasks=[
                 research_task,
                 writing_task,
             ],
+
             process=Process.sequential,
+
             verbose=False,
         )
+
+        # ----------------------------------------------------
+        # Execute
+        # ----------------------------------------------------
 
         result = crew.kickoff()
 
         return str(result)
+```

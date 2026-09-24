@@ -1,60 +1,69 @@
 ```python
 """
-agent_crew.py
-
-Backend for the AI Research & Article Writer application.
+AI Research & Article Writer
+Backend module
 
 Workflow:
-
 User Topic
-    ->
+    |
+    v
 Researcher Agent
-    ->
+    |
+    v
 DuckDuckGo Search
-    ->
+    |
+    v
 Research Findings
-    ->
+    |
+    v
 Writer Agent
-    ->
+    |
+    v
 Final Markdown Article
 """
 
 import os
-from typing import Optional
 
-from crewai import Agent, Crew, Process, Task, tool
+from crewai import Agent, Crew, Process, Task
 from langchain_groq import ChatGroq
 from duckduckgo_search import DDGS
 
 
-@tool("DuckDuckGo Web Search")
-def duckduckgo_search(query: str) -> str:
+# ============================================================
+# DuckDuckGo Search
+# ============================================================
+
+def search_duckduckgo(query):
     """
-    Search the web using DuckDuckGo and return useful search results.
+    Search DuckDuckGo and return search results as text.
     """
 
-    if not query or not query.strip():
-        return "The search query is empty."
+    if not query:
+        return "No search query was provided."
 
     try:
         results = []
 
-        with DDGS() as ddgs:
-            search_results = ddgs.text(
-                query=query.strip(),
-                max_results=8,
-                safesearch="moderate",
+        with DDGS() as search:
+
+            search_results = search.text(
+                query=query,
+                max_results=8
             )
 
             for result in search_results:
+
                 title = result.get("title", "")
                 url = result.get("href", "")
                 body = result.get("body", "")
 
                 results.append(
-                    "Title: " + title + "\n"
-                    "URL: " + url + "\n"
-                    "Summary: " + body
+                    "Title: "
+                    + title
+                    + "\nURL: "
+                    + url
+                    + "\nSummary: "
+                    + body
                 )
 
         if not results:
@@ -63,116 +72,147 @@ def duckduckgo_search(query: str) -> str:
         return "\n\n---\n\n".join(results)
 
     except Exception as error:
-        return "DuckDuckGo search failed: " + str(error)
 
+        return (
+            "DuckDuckGo search failed.\n"
+            + str(error)
+        )
+
+
+# ============================================================
+# Agent Crew Manager
+# ============================================================
 
 class AgentCrewManager:
     """
-    Controls the CrewAI research and article-writing workflow.
+    Manages the CrewAI research and writing workflow.
     """
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        model: str = "openai/gpt-oss-120b",
-        temperature: float = 0.2,
+        api_key=None,
+        model="openai/gpt-oss-120b",
+        temperature=0.2
     ):
-        self.api_key = api_key or os.getenv("GROQ_API_KEY")
+
+        self.api_key = (
+            api_key
+            or os.getenv("GROQ_API_KEY")
+        )
 
         if not self.api_key:
+
             raise ValueError(
                 "GROQ_API_KEY is missing. "
-                "Add it to Streamlit Secrets or enter it in the sidebar."
+                "Add your API key to Streamlit Secrets "
+                "or enter it in the sidebar."
             )
 
-        self.model_name = model
+        self.model = model
         self.temperature = temperature
 
         self.llm = ChatGroq(
-            model=self.model_name,
+            model=self.model,
             groq_api_key=self.api_key,
-            temperature=self.temperature,
+            temperature=self.temperature
         )
 
-    def create_researcher(self) -> Agent:
-        """
-        Create the research agent.
-        """
+    # ========================================================
+    # Researcher
+    # ========================================================
+
+    def create_researcher(self):
 
         researcher = Agent(
+
             role="Senior Technical Researcher",
+
             goal=(
-                "Research the requested topic accurately and "
-                "provide reliable information and sources."
+                "Research the requested topic and provide "
+                "accurate, useful and well-organized information."
             ),
+
             backstory=(
                 "You are an experienced technical researcher. "
-                "You search the web for factual information, "
-                "official documentation, academic research, "
-                "primary sources, and recent developments."
+                "You investigate topics carefully and prioritize "
+                "reliable sources, official documentation, "
+                "academic research and reputable publications."
             ),
-            tools=[duckduckgo_search],
+
             llm=self.llm,
+
             verbose=False,
-            allow_delegation=False,
+
+            allow_delegation=False
         )
 
         return researcher
 
-    def create_writer(self) -> Agent:
-        """
-        Create the article writer agent.
-        """
+    # ========================================================
+    # Writer
+    # ========================================================
+
+    def create_writer(self):
 
         writer = Agent(
-            role="Technical Article Writer and Formatting Specialist",
+
+            role="Technical Article Writer",
+
             goal=(
-                "Turn research findings into a clear, accurate, "
-                "professional Markdown article."
+                "Transform research findings into a clear, "
+                "professional and well-structured Markdown article."
             ),
+
             backstory=(
                 "You are an experienced technical writer. "
-                "You explain complex topics clearly and organize "
-                "research into useful educational articles."
+                "You turn complex research into easy-to-understand "
+                "professional articles."
             ),
+
             llm=self.llm,
+
             verbose=False,
-            allow_delegation=False,
+
+            allow_delegation=False
         )
 
         return writer
 
+    # ========================================================
+    # Research Task
+    # ========================================================
+
     def create_research_task(
         self,
-        topic: str,
-        depth: str,
-    ) -> Task:
-        """
-        Create the research task.
-        """
+        topic,
+        depth
+    ):
 
         if depth == "Basic":
+
             depth_instruction = (
-                "Focus on the most important facts and provide "
-                "a concise research report."
+                "Focus on the most important facts "
+                "and keep the research concise."
             )
 
         elif depth == "Deep":
+
             depth_instruction = (
-                "Perform extensive research. Look for primary "
-                "sources, recent developments, important examples, "
-                "and conflicting information where relevant."
+                "Perform extensive research. Look for "
+                "primary sources, recent developments, "
+                "real-world examples and conflicting information."
             )
 
         else:
+
             depth_instruction = (
-                "Conduct thorough research covering definitions, "
-                "key concepts, facts, examples, applications, "
-                "and reliable sources."
+                "Conduct thorough research covering "
+                "definitions, concepts, facts, examples, "
+                "applications and reliable sources."
             )
 
-        task_description = f"""
-Research this topic:
+        description = f"""
+Research the following topic:
 
 {topic}
 
@@ -180,83 +220,90 @@ Research depth:
 
 {depth}
 
-Instructions:
-
 {depth_instruction}
 
-You must:
+Your research should cover:
 
-1. Define the topic.
-2. Explain the major concepts.
-3. Find important facts.
-4. Find recent developments when relevant.
-5. Find real-world applications.
-6. Find useful examples.
-7. Search for primary sources when possible.
-8. Prefer official websites and documentation.
-9. Prefer academic and research sources.
-10. Prefer reputable organizations and publications.
-11. Include source names.
-12. Include source URLs when available.
-13. Do not invent sources.
-14. Do not invent URLs.
-15. Clearly identify uncertainty.
+1. Topic definition
+2. Important concepts
+3. Important facts
+4. Recent developments when relevant
+5. Real-world applications
+6. Practical examples
+7. Reliable sources
+8. Primary sources where possible
+9. Source names
+10. Source URLs
+
+Important rules:
+
+- Do not invent facts.
+- Do not invent statistics.
+- Do not invent sources.
+- Do not invent URLs.
+- Clearly identify uncertain information.
+
+Use web search when additional information is required.
 
 Return a structured research report.
-
-Do not write the final article yet.
+Do not write the final article.
 """
 
         task = Task(
-            description=task_description,
+
+            description=description,
+
             expected_output=(
-                "A structured research report containing the "
-                "topic definition, key concepts, important facts, "
-                "recent developments, real-world applications, "
-                "examples, and reliable sources with URLs."
-            ),
+                "A structured research report containing "
+                "the topic definition, key concepts, facts, "
+                "applications, examples and reliable sources."
+            )
         )
 
         return task
 
+    # ========================================================
+    # Writing Task
+    # ========================================================
+
     def create_writing_task(
         self,
-        topic: str,
-        research_task: Task,
-        article_length: str,
-    ) -> Task:
-        """
-        Create the article-writing task.
-        """
+        topic,
+        research_task,
+        article_length
+    ):
 
         if article_length == "Short":
-            length_instruction = (
-                "Write approximately 700 to 1000 words."
+
+            length = (
+                "Approximately 700 to 1000 words."
             )
 
         elif article_length == "Long":
-            length_instruction = (
-                "Write approximately 2000 to 3000 words."
+
+            length = (
+                "Approximately 2000 to 3000 words."
             )
 
         else:
-            length_instruction = (
-                "Write approximately 1200 to 1800 words."
+
+            length = (
+                "Approximately 1200 to 1800 words."
             )
 
-        task_description = f"""
+        description = f"""
 Write a professional Markdown article about:
 
 {topic}
 
 Article length:
 
-{length_instruction}
+{length}
 
-Use the research produced by the Researcher Agent
+Use the research report from the Researcher Agent
 as the factual foundation.
 
-The article MUST contain these sections:
+The article MUST contain:
 
 # Title
 
@@ -282,20 +329,20 @@ Create a useful Markdown table.
 
 ## Conclusion
 
-Summarize the main findings.
+Summarize the major findings.
 
 ## References
 
-List the sources and URLs provided by the research.
+List the sources supplied by the research.
 
 Rules:
 
 1. Return clean Markdown.
 2. Use headings and subheadings.
 3. Use bullet points where useful.
-4. Use Markdown tables.
+4. Include a Markdown table.
 5. Keep the writing professional.
-6. Explain technical terms when necessary.
+6. Explain technical terminology.
 7. Avoid unnecessary repetition.
 8. Do not mention CrewAI.
 9. Do not mention internal prompts.
@@ -305,33 +352,40 @@ Rules:
 13. Do not invent quotes.
 14. Base factual claims on the research.
 
-The final output must be ready to save as a Markdown file.
+The final result must be ready to save as a Markdown file.
 """
 
         task = Task(
-            description=task_description,
+
+            description=description,
+
             expected_output=(
-                "A complete Markdown article containing a title, "
-                "introduction, core concepts, real-world use cases, "
-                "key takeaways, summary table, conclusion, "
-                "and references."
+                "A complete Markdown article containing "
+                "a title, introduction, core concepts, "
+                "real-world use cases, key takeaways, "
+                "summary table, conclusion and references."
             ),
-            context=[research_task],
+
+            context=[
+                research_task
+            ]
         )
 
         return task
 
+    # ========================================================
+    # Generate Article
+    # ========================================================
+
     def generate_article(
         self,
-        topic: str,
-        depth: str = "Detailed",
-        article_length: str = "Medium",
-    ) -> str:
-        """
-        Run the complete research and writing workflow.
-        """
+        topic,
+        depth="Detailed",
+        article_length="Medium"
+    ):
 
         if not topic or not topic.strip():
+
             raise ValueError(
                 "Please provide a research topic."
             )
@@ -342,29 +396,34 @@ The final output must be ready to save as a Markdown file.
 
         research_task = self.create_research_task(
             topic=topic.strip(),
-            depth=depth,
+            depth=depth
         )
 
         writing_task = self.create_writing_task(
             topic=topic.strip(),
             research_task=research_task,
-            article_length=article_length,
+            article_length=article_length
         )
 
         research_task.agent = researcher
+
         writing_task.agent = writer
 
         crew = Crew(
+
             agents=[
                 researcher,
-                writer,
+                writer
             ],
+
             tasks=[
                 research_task,
-                writing_task,
+                writing_task
             ],
+
             process=Process.sequential,
-            verbose=False,
+
+            verbose=False
         )
 
         result = crew.kickoff()

@@ -1,0 +1,6 @@
+streamlit>=1.45.0,<2.0.0
+crewai>=0.86.0,<1.0.0
+crewai-tools>=0.17.0,<1.0.0
+langchain-groq>=0.2.0,<1.0.0
+duckduckgo-search>=7.0.0,<8.0.0
+python-dotenv>=1.0.0,<2.0.0
